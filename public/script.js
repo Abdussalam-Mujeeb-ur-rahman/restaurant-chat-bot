@@ -1,4 +1,4 @@
-const socket = io("http://localhost:8080");
+const socket = io("https://restaurant-chat-bot.onrender.com:8080");
 
 (function () {
   const app = document.querySelector(".app");
