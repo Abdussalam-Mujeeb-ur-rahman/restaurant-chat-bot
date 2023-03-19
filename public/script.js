@@ -1,4 +1,4 @@
-const socket = io("https://restaurant-chat-bot.onrender.com");
+const socket = io("http://localhost:8080");
 
 (function () {
   const app = document.querySelector(".app");
@@ -6,9 +6,18 @@ const socket = io("https://restaurant-chat-bot.onrender.com");
   app
     .querySelector(".join-screen #join-user")
     .addEventListener("click", function () {
-      console.log("joined");
-      console.log(socket.id);
-      socket.emit("joined", "user joined!");
+      let username = app.querySelector("#username").value;
+      
+      if(username == ''){
+        username = 'user';
+      }
+
+      const joinedMessage = {
+        message: "user joined!",
+        username: username
+      }
+
+      socket.emit("joined", joinedMessage);
 
       app.querySelector(".join-screen").classList.remove("active");
       app.querySelector(".chat-screen").classList.add("active");
