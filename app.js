@@ -1,18 +1,34 @@
 const express = require("express");
 const app = express();
 const server = require("http").createServer(app);
+const session = require('express-session')
 
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
     origin: "*",
   },
+  cookie: false
 });
+
+const sessionMiddleware = session({
+  secret: 'session_secret',
+  resave: false,
+  saveUninitialized: true,
+  cookie: { maxAge: 60 * 60 * 600 }
+})
+
+app.use(sessionMiddleware)
+
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, socket.request.res, next);
+})
 
 const bodyParser = require("body-parser");
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
+
 
 app.use(express.static("public"));
 
@@ -21,25 +37,19 @@ app.get('/', (req, res) => {
 })
 
 
-const userOrder = {
-  source: "",
-  product: "",
-  productPrice: "",
-  deliveryLocation: "",
-  deliveryPrice: "",
-  totalPrice: "",
-  paymentType: "",
-  phoneNumber: "",
-  date: new Date()
-};
-const orderHistory = []
 
-const welcome = `<p>Welcome to ALLAHisrabb restaurant, select:</p>
+
+
+function welcome(username) {
+  return `
+  <p>Hello <strong>${username}</strong></p>
+  <p>Welcome to ALLAHisrabb restaurant, select:</p>
 <p> 1 to Place an order</p>
 <p>Send 99 to checkout order</p>
 <p>Send 98 to see order history</p>
 <p>Send 97 to see current order</p>
 <p>Send 0 to cancel order</p>`;
+}
 
 //step1 messages
 const orders = `<p>1 - Jollof rice</p>
@@ -56,6 +66,24 @@ const cancel = `<p style="font-weight: bold">Order cancelled!<p><br>
 <p>Send 98 to see order history</p>
 <p>Send 97 to see current order</p>
 <p>Send 0 to cancel order</p>`;
+
+// function ordersHistory(orders) {
+//   if(orders == {}){
+//      let message = `You currently do not have orders`
+//      return message;
+//   }
+
+   
+//   orders.forEach(order => {
+//     let message = ""
+//     message += ` <ol>
+//       <li>${order.entries}</li>
+//     </ol>`
+//     return message;
+//   })
+//   return ;
+
+// }
 
 //step2 messages
 const jollof = ` <li>1 - jollof & meat: 3000</li>
@@ -109,7 +137,7 @@ function paymentMessage(price) {
 
 //step5 messages
 
-function inputPhoneNumber(paymentType){
+function inputPhoneNumber(paymentType) {
   return `<p>You have chosen to pay with <strong>${paymentType}</strong></p><br>
   Further messages regarding your ${paymentType} payment will be forwarded to your  phone number<br>
   please input your phone number
@@ -118,7 +146,7 @@ function inputPhoneNumber(paymentType){
 
 //step6 message
 
-function checkoutMessage(product, price, location, dprice, paymentType, phoneNumber){
+function checkoutMessage(product, price, location, dprice, paymentType, phoneNumber) {
   return `<p>Product: ${product}</p>
   <p>Product price: ${price}</p>
   <p>Delivery location: ${location}</p>
@@ -134,13 +162,28 @@ function checkoutMessage(product, price, location, dprice, paymentType, phoneNum
 io.on("connection", (socket) => {
   console.log(`user connected! ${socket.id}`);
 
+  socket.request.userOrder = {
+    source: "",
+    product: "",
+    productPrice: "",
+    deliveryLocation: "",
+    deliveryPrice: "",
+    totalPrice: "",
+    paymentType: "",
+    phoneNumber: "",
+    date: new Date()
+  };
+
+  socket.request.orderHistory = {};
+  socket.request.orderNumber = 0
+
   function emitError() {
     return socket.emit("error", "please give valid order!");
   }
 
-  socket.on("joined", (message) => {
-    console.log(message);
-    socket.emit("welcome", welcome);
+  socket.on("joined", ({ message, username }) => {
+    socket.emit("welcome", welcome(username));
+    socket.request.username = username;
   });
 
   socket.on("chat", ({ messageValue, step }) => {
@@ -157,7 +200,7 @@ io.on("connection", (socket) => {
         socket.emit("order", orders);
         return;
       }
-      if(messageValue == 99){
+      if (messageValue == 99) {
         socket.emit('invalidCheckout', 'you are currently not ordering anything!');
         socket.emit('order', `<p> 1 to Place an order</p>
         <p>Send 99 to checkout order</p>
@@ -166,8 +209,8 @@ io.on("connection", (socket) => {
         <p>Send 0 to cancel order</p>`)
         return;
       }
-      if(messageValue == 98){
-        socket.emit('orderHistory', JSON.stringify(orderHistory));
+      if (messageValue == 98) {
+        socket.emit('orderHistory', JSON.stringify(socket.request.orderHistory));
         socket.emit('order', `<p> 1 to Place an order</p>
         <p>Send 99 to checkout order</p>
         <p>Send 98 to see order history</p>
@@ -175,7 +218,7 @@ io.on("connection", (socket) => {
         <p>Send 0 to cancel order</p>`)
         return;
       }
-      if(messageValue == 97){
+      if (messageValue == 97) {
         socket.emit('orderHistory', 'no current order!');
         socket.emit('order', `<p> 1 to Place an order</p>
         <p>Send 99 to checkout order</p>
@@ -188,274 +231,278 @@ io.on("connection", (socket) => {
     if (step == 2) {
       if (messageValue == 1) {
         socket.emit("order", jollof);
-        userOrder.source = "jollof";
+        socket.request.userOrder.source = "jollof";
         return;
       }
       if (messageValue == 2) {
         socket.emit("order", fried);
-        userOrder.source = "fried";
+        socket.request.userOrder.source = "fried";
         return;
       }
       if (messageValue == 3) {
         socket.emit("order", swallow);
-        userOrder.source = "swallow";
+        socket.request.userOrder.source = "swallow";
         return;
       }
       if (messageValue == 4) {
         socket.emit("order", chicken);
-        userOrder.source = "chicken";
+        socket.request.userOrder.source = "chicken";
         return;
       }
       if (messageValue == 5) {
         socket.emit("order", diary);
-        userOrder.source = "diary";
+        socket.request.userOrder.source = "diary";
         return;
       }
     }
     if (step == 3) {
-      if (userOrder.source == "jollof") {
+      if (socket.request.userOrder.source == "jollof") {
         if (messageValue == 1) {
-          userOrder.product = "jollof & meat";
-          userOrder.productPrice = "3000";
+          socket.request.userOrder.product = "jollof & meat";
+          socket.request.userOrder.productPrice = "3000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 2) {
-          userOrder.product = "jollof & chiken";
-          userOrder.productPrice = "5000";
+          socket.request.userOrder.product = "jollof & chiken";
+          socket.request.userOrder.productPrice = "5000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
       }
-      if (userOrder.source == "fried") {
+      if (socket.request.userOrder.source == "fried") {
         if (messageValue == 1) {
-          userOrder.product = "fried & meat";
-          userOrder.productPrice = "3000";
+          socket.request.userOrder.product = "fried & meat";
+          socket.request.userOrder.productPrice = "3000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
-          console.log(userOrder)
           return;
         }
         if (messageValue == 2) {
-          userOrder.product = "fried & chiken";
-          userOrder.productPrice = "5000";
+          socket.request.userOrder.product = "fried & chiken";
+          socket.request.userOrder.productPrice = "5000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
       }
-      if (userOrder.source == 'swallow'){
+      if (socket.request.userOrder.source == 'swallow') {
         if (messageValue == 1) {
-          userOrder.product = "eba & meat";
-          userOrder.productPrice = "1500";
+          socket.request.userOrder.product = "eba & meat";
+          socket.request.userOrder.productPrice = "1500";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 2) {
-          userOrder.product = "eba & chiken";
-          userOrder.productPrice = "5000";
+          socket.request.userOrder.product = "eba & chiken";
+          socket.request.userOrder.productPrice = "5000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 3) {
-          userOrder.product = "amala & meat";
-          userOrder.productPrice = "3000";
+          socket.request.userOrder.product = "amala & meat";
+          socket.request.userOrder.productPrice = "3000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 4) {
-          userOrder.product = "amala & chiken";
-          userOrder.productPrice = "4000";
+          socket.request.userOrder.product = "amala & chiken";
+          socket.request.userOrder.productPrice = "4000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 5) {
-          userOrder.product = "semo & meat";
-          userOrder.productPrice = "4500";
+          socket.request.userOrder.product = "semo & meat";
+          socket.request.userOrder.productPrice = "4500";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 6) {
-          userOrder.product = "semo & chiken";
-          userOrder.productPrice = "5400";
+          socket.request.userOrder.product = "semo & chiken";
+          socket.request.userOrder.productPrice = "5400";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 7) {
-          userOrder.product = "fufu & meat";
-          userOrder.productPrice = "1600";
+          socket.request.userOrder.product = "fufu & meat";
+          socket.request.userOrder.productPrice = "1600";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 8) {
-          userOrder.product = "fufu & chiken";
-          userOrder.productPrice = "4000";
+          socket.request.userOrder.product = "fufu & chiken";
+          socket.request.userOrder.productPrice = "4000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
       }
-      if(userOrder.source == 'chicken'){
+      if (socket.request.userOrder.source == 'chicken') {
         if (messageValue == 1) {
-          userOrder.product = "full spicy chicken";
-          userOrder.productPrice = "9000";
+          socket.request.userOrder.product = "full spicy chicken";
+          socket.request.userOrder.productPrice = "9000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 2) {
-          userOrder.product = "half spicy chicken";
-          userOrder.productPrice = "5000";
+          socket.request.userOrder.product = "half spicy chicken";
+          socket.request.userOrder.productPrice = "5000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 3) {
-          userOrder.product = "full fried chicken";
-          userOrder.productPrice = "5000";
+          socket.request.userOrder.product = "full fried chicken";
+          socket.request.userOrder.productPrice = "5000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 4) {
-          userOrder.product = "half fried chicken";
-          userOrder.productPrice = "3000";
+          socket.request.userOrder.product = "half fried chicken";
+          socket.request.userOrder.productPrice = "3000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
       }
-      if(userOrder.source == 'diary'){
+      if (socket.request.userOrder.source == 'diary') {
         if (messageValue == 1) {
-          userOrder.product = "pure milk";
-          userOrder.productPrice = "1500";
+          socket.request.userOrder.product = "pure milk";
+          socket.request.userOrder.productPrice = "1500";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 2) {
-          userOrder.product = "yoghurt";
-          userOrder.productPrice = "5000";
+          socket.request.userOrder.product = "yoghurt";
+          socket.request.userOrder.productPrice = "5000";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
         if (messageValue == 3) {
-          userOrder.product = "cheese";
-          userOrder.productPrice = "5500";
+          socket.request.userOrder.product = "cheese";
+          socket.request.userOrder.productPrice = "5500";
           socket.emit(
             "order",
-            orderMessage(userOrder.product, userOrder.productPrice)
+            orderMessage(socket.request.userOrder.product, socket.request.userOrder.productPrice)
           );
           return;
         }
       }
     }
     if (step == 4) {
-        if (messageValue == 1) {
-          userOrder.deliveryPrice = "300";
-          userOrder.deliveryLocation = "your doorstep";
-          socket.emit(
-            "order",
-            paymentMessage(
-              Number(
-                Number(userOrder.productPrice) + Number(userOrder.deliveryPrice)
-              )
+      if (messageValue == 1) {
+        socket.request.userOrder.deliveryPrice = "300";
+        socket.request.userOrder.deliveryLocation = "your doorstep";
+        socket.emit(
+          "order",
+          paymentMessage(
+            Number(
+              Number(socket.request.userOrder.productPrice) + Number(socket.request.userOrder.deliveryPrice)
             )
-          );
-          return;
-        }
-        if (messageValue == 2) {
-          userOrder.deliveryPrice = "0";
-          userOrder.deliveryLocation = "nearest branch of the company";
-          socket.emit(
-            "order",
-            paymentMessage(
-              Number(
-                Number(userOrder.productPrice) + Number(userOrder.deliveryPrice)
-              )
+          )
+        );
+        return;
+      }
+      if (messageValue == 2) {
+        socket.request.userOrder.deliveryPrice = "0";
+        socket.request.userOrder.deliveryLocation = "nearest branch of the company";
+        socket.emit(
+          "order",
+          paymentMessage(
+            Number(
+              Number(socket.request.userOrder.productPrice) + Number(socket.request.userOrder.deliveryPrice)
             )
-          );
-          return;
-        }
+          )
+        );
+        return;
+      }
     }
-    if(step == 5){
+    if (step == 5) {
 
-        if(messageValue == 1){
-          userOrder.totalPrice = Number(userOrder.productPrice) + Number(userOrder.deliveryPrice);
-          userOrder.paymentType = "debit card"
-          socket.emit('order', inputPhoneNumber(userOrder.paymentType));
-          return;
-        }
-        if(messageValue == 2){
-          userOrder.paymentType = 'cash'
-          socket.emit('order', inputPhoneNumber(userOrder.paymentType))
-          return;
-        }
+      if (messageValue == 1) {
+        socket.request.userOrder.totalPrice = Number(socket.request.userOrder.productPrice) + Number(socket.request.userOrder.deliveryPrice);
+        socket.request.userOrder.paymentType = "debit card"
+        socket.emit('order', inputPhoneNumber(socket.request.userOrder.paymentType));
+        return;
+      }
+      if (messageValue == 2) {
+        socket.request.userOrder.paymentType = 'cash'
+        socket.emit('order', inputPhoneNumber(socket.request.userOrder.paymentType))
+        return;
+      }
 
     }
-    if(step == 6){
-      userOrder.phoneNumber = messageValue;
-      const {product, productPrice, deliveryLocation, deliveryPrice, paymentType, phoneNumber} = userOrder
+    if (step == 6) {
+      socket.request.userOrder.phoneNumber = messageValue;
+      const { product, productPrice, deliveryLocation, deliveryPrice, paymentType, phoneNumber } = socket.request.userOrder
       socket.emit('order', checkoutMessage(product, productPrice, deliveryLocation, deliveryPrice, paymentType, phoneNumber));
       return;
     }
-    if(step == 7){
-      if(messageValue == 99){
+    if (step == 7) {
+      if (messageValue == 99) {
         socket.emit('order', '<strong>congratulations!</strong><br> You have successfully placed your order. Thanks for your patience and cooperation. We shall get back to you shortly!');
-        orderHistory.push(userOrder);
+
         socket.emit('newOrder', `<p style="font-weight: bold">Give new order!<p><br>
         <p> 1 to Place an order</p>
         <p>Send 99 to checkout order</p>
         <p>Send 98 to see order history</p>
         <p>Send 97 to see current order</p>
-        <p>Send 0 to cancel order</p>`)
-        console.log(orderHistory);
+        <p>Send 0 to cancel order</p>`);
+
+
+        socket.request.orderHistory['order' + (socket.request.orderNumber + 1)] = socket.request.userOrder;
+
+        socket.request.orderNumber++;
+        console.log(socket.request.orderHistory)
         return;
       }
     }
