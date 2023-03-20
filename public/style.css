@@ -37,6 +37,7 @@ align-items: center;
 
 .join-screen>div{
     display: flex;
+width: 50%;
 }
 
 .join-screen input{
