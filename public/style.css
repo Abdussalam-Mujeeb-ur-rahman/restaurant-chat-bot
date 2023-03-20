@@ -31,10 +31,12 @@ body{
 .join-screen{
     height: 100vh;
     position: relative;
+display: flex;
+justify-content: center;
+align-items: center;
 }
 
 .join-screen>div{
-    position: absolute;
     right: 1rem;
     bottom: 1rem;
     display: flex;
