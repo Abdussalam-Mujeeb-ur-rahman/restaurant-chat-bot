@@ -20,7 +20,7 @@ const sessionMiddleware = session({
 app.use(sessionMiddleware)
 
 io.use((socket, next) => {
-  sessionMiddleware(socket.request.session, socket.request.session.res, next);
+  sessionMiddleware(socket.request, socket.request.res, next);
 })
 
 const bodyParser = require("body-parser");
